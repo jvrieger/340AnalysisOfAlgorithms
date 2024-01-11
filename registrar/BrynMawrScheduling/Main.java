@@ -1,0 +1,239 @@
+import java.util.*;
+import java.io.*;
+import java.lang.*;
+
+
+public class Main {
+
+    public static final int INFINITY = 10000;
+    //public static final String OUTPUT_FILE = "schedule.txt";
+    //public static final String CONSTRAINTS = "constraintsMedium.txt";
+    //public static final String STUDENTS = "studentsMedium.txt";
+    
+    public static void main(String[] args) {
+
+        String CONSTRAINTS = args[0];
+        String STUDENTS = args[1];
+        String OUTPUT_FILE = args[2];
+        FileOutputStream fos = null;
+        File file;
+        long Time_start = System.nanoTime();
+
+        try {
+            //file output
+            file = new File(OUTPUT_FILE);
+            fos = new FileOutputStream(file);
+
+            //initial vars
+            LookupScheduleInfo lookup = new LookupScheduleInfo();
+            Teacher[] allTeachers = lookup.readConstraints(CONSTRAINTS);
+            Course[][] stuPrefList = lookup.readStuPrefs(STUDENTS);
+            int numTimes = lookup.getNumTimes();
+            int numRooms = lookup.getNumRooms();
+            int numCourses = lookup.getNumCourses();
+            int numTeachers = lookup.getNumTeachers();
+            int numStudents = lookup.getNumStudents();
+            Course[] allCourses = lookup.getAllCourses();
+            Room[] allRooms = lookup.getAllRooms();
+            int[][] conflicts = lookup.getConflicts();
+            HashMap<String, Department> allDepartments = lookup.getDepartments();
+            int points = 0;
+            BuildSchedule schedule = new BuildSchedule(numTimes, numRooms, numCourses, allDepartments); //methods: assignCourse(int time, Room, Course), printSchedule()
+
+            //work thru bottom diagonal of conflict matrix |_\
+            //working from highest to lowest conflict values, place courses of id i and j in diff timeslots
+            boolean done = false;
+            boolean[] coursePlaced = new boolean[numCourses];
+            //int size = 0;
+            int temp = 0;
+            while(!done) { //done when all courses are placed in conflict-pref timeslots and arbitrary rooms
+
+                int diagonal = 1; //index for the diagonal, above which we can ignore values since matrix is symetrical
+                int maxConflictI = 1;
+                int maxConflictJ = 0;
+                int count = 0; //keeps track of however many conflict vals are left to process
+                for (int i = 1; i < conflicts.length; i++) { //find maxConflict at the moment
+                    for (int j = 0; j < diagonal; j++) {
+                        if (conflicts[i][j] > -1) {count++;} //to check if done
+                        if (conflicts[i][j] > conflicts[maxConflictI][maxConflictJ]) {maxConflictI = i; maxConflictJ = j;}
+                    }
+                    if (diagonal < conflicts[i].length) {diagonal++;} //deal w diagonal index
+                }
+
+                //assign most conflicting courses to differing time slots
+                if (!coursePlaced[maxConflictI]) { //if this max-conflict-value course hasn't been placed in schedule
+                    Department dep1 = allCourses[maxConflictI].getDepartment();
+                    boolean[] openTimes = schedule.openTimeSlots(dep1.getName());
+                    //int[] getLastClass2 = schedule.
+                    int leastConflict = INFINITY;
+                    int timeSlotLeast = 0;
+                    for(int i=0; i<openTimes.length; i++){
+                       if (openTimes[i]){
+                            if (conflicts[schedule.getLastClass(dep1.getName(), i)][maxConflictI]<leastConflict){
+                                leastConflict = conflicts[schedule.getLastClass(dep1.getName(), i)][maxConflictI];
+                                timeSlotLeast = i;
+                            }
+                       }
+                       temp = timeSlotLeast; 
+                    }
+                    Room room = allRooms[schedule.getNextRoom(dep1.getName(), timeSlotLeast)];
+                    schedule.assignCourse(timeSlotLeast, room, allCourses[maxConflictI]);
+                    allCourses[maxConflictI].setRoom(room);
+                    allCourses[maxConflictI].setTime(timeSlotLeast);
+                    coursePlaced[maxConflictI] = true;
+                }
+                if (!coursePlaced[maxConflictJ]) {
+                    Department dep2 = allCourses[maxConflictJ].getDepartment();
+                    boolean[] openTimes = schedule.openTimeSlots(dep2.getName());
+                    //boolean[] openTimes = schedule.openTimeSlots();
+                    int leastConflict = INFINITY;
+                    int timeSlotLeast = 0;
+                    for(int i=0; i<openTimes.length; i++){
+                       if (openTimes[i]){  //cannot be tempIndex (cannot be at the same time as above)
+                        System.out.println(schedule.getLastClass(dep2.getName(), i));
+                        System.out.println(maxConflictJ);
+                        System.out.println(i);
+                            if(conflicts[schedule.getLastClass(dep2.getName(), i)][maxConflictJ]<leastConflict){
+                                leastConflict = conflicts[schedule.getLastClass(dep2.getName(), i)][maxConflictJ];
+                                timeSlotLeast = i;
+                            }
+                        }
+                    }
+                    Room room = allRooms[schedule.getNextRoom(dep2.getName(), timeSlotLeast)];
+                    schedule.assignCourse(timeSlotLeast, room, allCourses[maxConflictJ]);
+                    allCourses[maxConflictJ].setRoom(room);
+                    allCourses[maxConflictJ].setTime(timeSlotLeast);
+                    coursePlaced[maxConflictJ] = true; 
+                }
+                conflicts[maxConflictI][maxConflictJ] = -1; //mark seen
+
+                //if all classes are placed, done = true, terminate loop
+                if (count == 0) {done = true;}
+                int countPlaced = 0;
+                for (int k = 0; k < coursePlaced.length; k++) {if (coursePlaced[k]) {countPlaced++;}}
+                if (countPlaced == numCourses) {done = true;}
+                //allCourses[this.findCourse(courseId)])
+            } //all courses are placed in schedule prioritizing low conflict, in random rooms
+
+            //sort rooms and courses in each time slot, match them up (assign rooms to each course)
+            for (int i = 0; i < numTimes; i++) {
+                Course[] courses = schedule.getCourses(i);
+                Arrays.sort(courses, Collections.reverseOrder());
+                Room[] rooms = allRooms;
+                Arrays.sort(rooms, Collections.reverseOrder());
+
+                for (int j = 0; j < courses.length; j++) {
+                    courses[j].setRoom(rooms[j]);
+                }
+            }
+
+            schedule.reassignRooms(); //reorder/reassign courses to new rooms (computed above based off prefVal + roomSize)
+
+            Course[][] finalSchedule = schedule.getSchedule(); //give to Ramla!
+
+            //shows if student is in each time slot, so we don't put the same student in the same time slot twice
+            //initally all false 
+            boolean[][] whereIsStu = new boolean[numStudents][numTimes];
+            //how many classes each student is in, initally all 0
+            int[] studentClassNum = new int[numStudents];
+            for(int i = 0; i<numStudents; i++){
+                for(int j = 0; j<numTimes; j++){
+                    whereIsStu[i][j] = false; 
+                }
+            }
+            for(int i = 0; i<numStudents; i++){
+               studentClassNum[i] = 0; 
+            }
+
+            //goes through by ordered preferences of courses, and each student
+            for(int j = 0; j<stuPrefList[0].length; j++){
+                for(int i = 0; i < numStudents; i++) {
+                    //if the course is open and the student isn't already in a class at this time
+                    if(!whereIsStu[i][stuPrefList[i][j].getTime()] && stuPrefList[i][j].sizeofStudents()!=stuPrefList[i][j].getRoom().capacity){
+                        //set the student at this time to true
+                        whereIsStu[i][stuPrefList[i][j].getTime()] = true; 
+                        stuPrefList[i][j].incrementPeople((Integer)i);
+                        points++;
+                        studentClassNum[i]++;
+                    }
+                }
+            }
+
+            int cap = 0; 
+            for(int i=0; i<allCourses.length; i++){
+                cap += allCourses[i].sizeofStudents();
+            }
+               
+            for(int i = 0; i<numStudents; i++){
+                for(int j = 0; j<numCourses; j++){
+                    if(studentClassNum[i]==numTimes){
+                        break;
+                    }
+                    if(allCourses[j].sizeofStudents()!=allCourses[j].getRoom().capacity){
+                        if(!whereIsStu[i][allCourses[j].getTime()]){
+                            whereIsStu[i][allCourses[j].getTime()] = true; 
+                            allCourses[j].incrementPeople((Integer)i);
+                            studentClassNum[i]++;  
+                        }
+                    }
+                }
+            } 
+
+            cap = 0; 
+            for(int i=0; i<allCourses.length; i++){
+                cap+= allCourses[i].sizeofStudents();
+            }
+            for (int i = 0; i < allTeachers.length; i++) {
+                ArrayList<Integer> classes1 = allTeachers[i].getClasses();
+                for(int j = 0; j < classes1.size(); j++){
+                    allCourses[classes1.get(j)-1].setTeacher(allTeachers[i]);
+                }
+               // allCourses[(allTeachers[i].getClass1())-1].setTeacher(allTeachers[i]);
+               // allCourses[(allTeachers[i].getClass2())-1].setTeacher(allTeachers[i]);
+            }
+
+            //FINAL OUTPUT
+
+            String mycontent = String.format("%s\t%s\t%s\t%s\t%s\n", "Course", "Room", "Teacher", "Time", "Students");
+            for (int i = 0; i < allCourses.length; i++) {
+                mycontent += String.format("%d\t%s\t%d\t%d", allCourses[i].getId(), allCourses[i].getRoom().getId(), allCourses[i].getTeacher().getTeacherId(), allCourses[i].getTime());
+                mycontent += allCourses[i].studentsInClass();
+                mycontent += String.format("\n");
+            }
+
+            byte[] bytesArray = mycontent.getBytes();
+
+            fos.write(bytesArray);
+            fos.flush();
+            System.out.println("File Written Successfully Into: " + OUTPUT_FILE);
+
+            System.out.println("\nStudent Preference Value: " + points);
+            System.out.println("Best Case Student Value: " + numStudents*4);
+            System.out.printf("Fit Percentage: %.2f%%\n", ((float)points/(float)(numStudents*4)) * 100);
+            
+            long nano_estimated_Time = System.nanoTime();
+            System.out.println("time: " + nano_estimated_Time/.000000001);
+        }
+
+        catch (FileNotFoundException e) {
+            System.out.println(e + " caught");
+        }
+
+        catch (IOException ioe) {
+            ioe.printStackTrace();
+        }
+
+        finally {
+            try {
+                if (fos != null)
+                {
+                    fos.close();
+                }
+            }
+            catch (IOException ioe) {
+                System.out.println("Error in closing the Stream");
+            }
+        }
+
+    }
+}
